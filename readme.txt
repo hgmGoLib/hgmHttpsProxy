@@ -117,7 +117,9 @@ B. 服务端认客户端(clientCaPins,即「客户端也出证书」的双向 TL
       // 可选注入点:
       // DialUpstream: func(ctx, target)(net.Conn,error){...}  // 自定义「下一跳」拨号:区域选路/链式上游代理/自定义解析;nil=默认直连
       // RelayIdleTimeout: 2*time.Minute                       // 隧道空闲超时:两向都连续这么久无字节即断;0=默认2分钟,负=永不超时
+      // FailureReasonHeader: "X-ASCP-Failure-Reason"          // 拒绝/失败响应里写失败原因的头名;空=默认 "X-Hp-Failure-Reason"
   })
+  s.Listen()            // 可选:提前绑定端口,让 Addr() 在 Serve 前可用、端口占用等错误启动阶段同步暴露(Serve 也会自动调用,幂等)
   go s.Serve()
   ...
   s.Close()             // 立即停:关 listener,不等也不强断在飞隧道
