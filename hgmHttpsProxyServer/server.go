@@ -46,7 +46,14 @@ type ServerConfig struct {
 	// RelayIdleTimeout 隧道空闲超时:两个方向连续这么久都没有任何字节流动就断开隧道。
 	// 0 = 用默认 2 分钟(DefaultRelayIdleTimeout);负数 = 永不超时(长连接/流式场景)。
 	RelayIdleTimeout time.Duration
+
+	// FailureReasonHeader 拒绝/失败响应里写失败原因(cidr_denied/auth_failed/...)的头名,
+	// 便于对接方在响应侧诊断。空 = 默认 "X-Hp-Failure-Reason"。
+	FailureReasonHeader string
 }
+
+// DefaultFailureReasonHeader 拒绝响应里失败原因头的默认名。
+const DefaultFailureReasonHeader = "X-Hp-Failure-Reason"
 
 // AuditEvent 一次连接的审计记录。
 //
@@ -96,17 +103,39 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if cfg.RelayIdleTimeout == 0 {
 		cfg.RelayIdleTimeout = DefaultRelayIdleTimeout
 	}
+	if cfg.FailureReasonHeader == "" {
+		cfg.FailureReasonHeader = DefaultFailureReasonHeader
+	}
 	return &Server{cfg: cfg, conns: make(map[net.Conn]struct{})}, nil
 }
 
-// Serve 阻塞运行,直到 Close 或致命错误。
-func (s *Server) Serve() error {
+// Listen 提前绑定监听端口(可选)。Serve 会自动调用它,但提前调用能让对接方在 Serve 之前
+// 就拿到 Addr(),并把「端口被占用」这类错误在启动阶段同步暴露(而不是埋在 Serve 的 goroutine 里)。
+// 重复调用幂等;已 Close/Shutdown 后调用返回错误。
+func (s *Server) Listen() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ln != nil {
+		return nil
+	}
+	if s.closed {
+		return errors.New("hgmHttpsProxy: server 已 Close/Shutdown,不能再 Listen")
+	}
 	ln, err := s.buildListener()
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
 	s.ln = ln
+	return nil
+}
+
+// Serve 阻塞运行,直到 Close 或致命错误。
+func (s *Server) Serve() error {
+	if err := s.Listen(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	ln := s.ln
 	s.mu.Unlock()
 	for {
 		conn, err := ln.Accept()
@@ -273,7 +302,7 @@ func (s *Server) handleConn(raw net.Conn) {
 
 	status, reason, user := s.authorize(req, remote)
 	if status != 200 {
-		extra := map[string]string{"X-Hp-Failure-Reason": reason}
+		extra := map[string]string{s.cfg.FailureReasonHeader: reason}
 		if status == 407 {
 			extra[hgmHttpsProxyClient.HeaderProxyAuthenticate] = `Basic realm="hgmHttpsProxy"`
 		}
@@ -293,7 +322,7 @@ func (s *Server) handleConn(raw net.Conn) {
 	upstream, err := dialUpstream(dialCtx, req.Target)
 	cancel()
 	if err != nil {
-		_ = hgmHttpsProxyClient.WriteConnectResponse(raw, 502, "Bad Gateway", map[string]string{"X-Hp-Failure-Reason": "upstream_unreachable"})
+		_ = hgmHttpsProxyClient.WriteConnectResponse(raw, 502, "Bad Gateway", map[string]string{s.cfg.FailureReasonHeader: "upstream_unreachable"})
 		s.audit(AuditEvent{RemoteAddr: remote, User: user, Target: req.Target, Status: 502, Reason: "upstream_unreachable"})
 		return
 	}
