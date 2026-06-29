@@ -146,6 +146,7 @@ B. 服务端认客户端(clientCaPins,即「客户端也出证书」的双向 TL
                    内嵌组:TLSCertPEM / TLSKeyPEM(PEM 文本)
                    文件组:TLSCertFile / TLSKeyFile(文件路径;两文件都不存在则首启自动生成并落盘)
                  证书与私钥各自在「内嵌」「文件」里二选一;ServerTlsCert 整体为 nil/空 = 内存生成自签证书。
+                 UseHttp=true 则明文 http 监听(忽略 ServerTlsCert,不做 TLS;仅 demo/内网)。
                  其余 JSON 字段:Listen / AcceptedBasic{user:pass} / ClientCaPins[] /
                  AllowedCIDRs[] / TargetAllowlist[] / RelayIdleTimeoutSeconds(0=默认2分钟,负=永不超时) /
                  DisplayIP(打印 URL 用的 IP,空=127.0.0.1,由调用者自行替换成真实可达地址)。

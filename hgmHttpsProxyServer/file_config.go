@@ -15,7 +15,8 @@ import (
 // 指针下;其余字段与 ServerConfig 一一对应(函数型注入点如 DialUpstream 只能代码对接,不进 JSON)。
 type ServerFileConfig struct {
 	Listen        string            // 如 ":9443"
-	ServerTlsCert *ServerTlsCert    // 服务端证书来源;nil = 内存生成一张自签证书(明文需另行约定,这里默认 https)
+	UseHttp       bool              // true = 明文 http 监听(不做 TLS,忽略 ServerTlsCert);仅 demo/内网
+	ServerTlsCert *ServerTlsCert    // 服务端证书来源;nil = 内存生成一张自签证书(UseHttp=true 时此字段忽略)
 	AcceptedBasic map[string]string // user → pass(空 = 不要求账号密码)
 	ClientCaPins  []string          // 客户端上一级 CA 的 SPKI pin(空 = 不要求客户端证书)
 	AllowedCIDRs  []string          // 允许来源网段(空 = 不限)
@@ -39,6 +40,7 @@ type ServerTlsCert struct {
 }
 
 // ToServerConfig 把文件态配置解析成 ServerConfig(不含 OnAudit 等函数型注入点,由调用方按需补)。
+//   - UseHttp == true:明文 http 监听,跳过下面所有证书逻辑
 //   - ServerTlsCert == nil:内存生成一张自签证书(SAN=127.0.0.1)
 //   - 内嵌组/文件组:各取一份 PEM
 //   - 文件组且两个文件都不存在:首次启动自动生成证书+私钥并写入这两个文件
@@ -50,15 +52,19 @@ func (fc *ServerFileConfig) ToServerConfig() (ServerConfig, error) {
 		TargetAllowlist:  fc.TargetAllowlist,
 		RelayIdleTimeout: time.Duration(fc.RelayIdleTimeoutSeconds) * time.Second, // 0 → NewServer 兜底 2 分钟
 	}
-	certPEM, keyPEM, err := fc.ServerTlsCert.resolve()
-	if err != nil {
-		return ServerConfig{}, err
+	if !fc.UseHttp { // UseHttp = 明文监听,不做 TLS,跳过证书解析/生成
+		certPEM, keyPEM, err := fc.ServerTlsCert.resolve()
+		if err != nil {
+			return ServerConfig{}, err
+		}
+		cfg.TLSCertPEM, cfg.TLSKeyPEM = certPEM, keyPEM
 	}
-	cfg.TLSCertPEM, cfg.TLSKeyPEM = certPEM, keyPEM
 	if len(fc.ClientCaPins) > 0 {
-		if cfg.ClientCaPins, err = hgmHttpsProxyClient.ParsePins(strings.Join(fc.ClientCaPins, ",")); err != nil {
+		pins, err := hgmHttpsProxyClient.ParsePins(strings.Join(fc.ClientCaPins, ","))
+		if err != nil {
 			return ServerConfig{}, fmt.Errorf("ClientCaPins: %w", err)
 		}
+		cfg.ClientCaPins = pins
 	}
 	return cfg, nil
 }
