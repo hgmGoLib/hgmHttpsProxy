@@ -3,6 +3,7 @@ package hgmHttpsProxyServer
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -115,10 +116,10 @@ func loadOrGenCertFiles(certFile, keyFile string) (certPEM, keyPEM []byte, err e
 		if err != nil {
 			return nil, nil, fmt.Errorf("首次启动生成服务端证书: %w", err)
 		}
-		if err = os.WriteFile(certFile, certPEM, 0o644); err != nil {
+		if err = writeFileMkdirAll(certFile, certPEM, 0o644); err != nil {
 			return nil, nil, fmt.Errorf("写 TLSCertFile %s: %w", certFile, err)
 		}
-		if err = os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
+		if err = writeFileMkdirAll(keyFile, keyPEM, 0o600); err != nil {
 			return nil, nil, fmt.Errorf("写 TLSKeyFile %s: %w", keyFile, err)
 		}
 		return certPEM, keyPEM, nil
@@ -130,4 +131,16 @@ func loadOrGenCertFiles(certFile, keyFile string) (certPEM, keyPEM []byte, err e
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// writeFileMkdirAll 写文件,父目录不存在则先建(0755)。首次启动落证书时,配置里给的
+// 路径(如 /opt/cp/hgmHttpsProxyServer/serverCert/cert.pem)父目录常还没建,直接
+// os.WriteFile 会 no such file or directory,这里兜底建好再写。
+func writeFileMkdirAll(path string, data []byte, perm os.FileMode) error {
+	if dir := filepath.Dir(path); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("建父目录 %s: %w", dir, err)
+		}
+	}
+	return os.WriteFile(path, data, perm)
 }
