@@ -140,7 +140,7 @@ B. 服务端认客户端(clientCaPins,即「客户端也出证书」的双向 TL
                  -caCert= -caKey= -cn= -days= -out=前缀
   serve          读 JSON 配置启动网关:-Config=server.json。异步 Serve + 监听 Ctrl+C/SIGTERM,
                  收到信号即优雅停服;启动后向 stdout 打印一条「客户端可直接用」的 forward_to URL
-                 (Server.ForwardURL 据当前配置实时生成:scheme://user:pass@DisplayIP:实际端口?
+                 (Server.GetForwardURL 据当前配置实时生成:scheme://user:pass@DisplayIP:实际端口?
                  serverPins=…&clientCaPins=…)。账号密码取 AcceptedBasic 排序最小的一条;serverPins
                  实时算服务端证书 SPKI;无 Basic/无 TLS/无 ClientCaPins 则对应部分不出现。
                  JSON 配置类型 = hgmHttpsProxyServer.ServerFileConfig(放在 server 库并导出,方便上层

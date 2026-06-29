@@ -173,7 +173,7 @@ func (s *Server) Addr() string {
 	return s.ln.Addr().String()
 }
 
-// ForwardURL 基于当前运行配置拼出一条「客户端可直接用」的 forward_to URL:
+// GetForwardURL 基于当前运行配置拼出一条「客户端可直接用」的 forward_to URL:
 //
 //	scheme://user:pass@host:port?serverPins=...&clientCaPins=...
 //
@@ -181,7 +181,10 @@ func (s *Server) Addr() string {
 // 有 AcceptedBasic → 带 user:pass(多账号时取排序最小的一条,够示范即可);有 ClientCaPins →
 // 带 clientCaPins(客户端还需另行注入证书,URL 只表达这个要求)。host 为展示用主机名/IP
 // (空 = 127.0.0.1,调用者自行换成真实可达地址);端口取实际监听端口。Listen/Serve 后才有意义。
-func (s *Server) ForwardURL(host string) (string, error) {
+//
+// 用户名/密码/pin 一律交给 url.URL 自己转义(pin 里的冒号、密码里的空格等都会被正确百分号编码),
+// 客户端那边 u.Query()/u.User 会原样解码回来,无需手工拼字符串。
+func (s *Server) GetForwardURL(host string) (string, error) {
 	scheme := "http"
 	if len(s.cfg.TLSCertPEM) > 0 {
 		scheme = "https"
@@ -193,38 +196,32 @@ func (s *Server) ForwardURL(host string) (string, error) {
 	if _, p, err := net.SplitHostPort(port); err == nil {
 		port = p
 	}
-	var userinfo string
+	u := url.URL{Scheme: scheme, Host: net.JoinHostPort(host, port)}
 	if len(s.cfg.AcceptedBasic) > 0 {
 		users := make([]string, 0, len(s.cfg.AcceptedBasic))
-		for u := range s.cfg.AcceptedBasic {
-			users = append(users, u)
+		for name := range s.cfg.AcceptedBasic {
+			users = append(users, name)
 		}
 		sort.Strings(users) // map 无序:取排序最小的一条,保证每次输出稳定
-		u := users[0]
-		userinfo = url.UserPassword(u, s.cfg.AcceptedBasic[u]).String() + "@"
+		u.User = url.UserPassword(users[0], s.cfg.AcceptedBasic[users[0]])
 	}
-	out := fmt.Sprintf("%s://%s%s:%s", scheme, userinfo, host, port)
-
-	// query:pin 形如 sha256:base64url,冒号/逗号在 query 里合法且客户端按原样解析,故不再转义。
-	var q []string
+	q := url.Values{}
 	if len(s.cfg.TLSCertPEM) > 0 {
 		pin, err := hgmHttpsProxyClient.SPKIPinFromCertPEM(s.cfg.TLSCertPEM)
 		if err != nil {
 			return "", fmt.Errorf("算 serverPins: %w", err)
 		}
-		q = append(q, "serverPins="+pin)
+		q.Set("serverPins", pin)
 	}
 	if len(s.cfg.ClientCaPins) > 0 {
 		pins := make([]string, 0, len(s.cfg.ClientCaPins))
 		for _, p := range s.cfg.ClientCaPins {
 			pins = append(pins, p.String())
 		}
-		q = append(q, "clientCaPins="+strings.Join(pins, ","))
+		q.Set("clientCaPins", strings.Join(pins, ","))
 	}
-	if len(q) > 0 {
-		out += "?" + strings.Join(q, "&")
-	}
-	return out, nil
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }
 
 // Close 立即停止监听并返回,不等待在飞隧道(也不强关它们,任其自然跑完或被各自超时收掉)。

@@ -28,7 +28,7 @@ func RunFileConfigAsyncSimple(fc ServerFileConfig) *Server {
 	if err := s.Listen(); err != nil {
 		panic(err)
 	}
-	u, err := s.ForwardURL(fc.DisplayIP)
+	u, err := s.GetForwardURL(fc.DisplayIP)
 	if err != nil {
 		panic(err)
 	}
