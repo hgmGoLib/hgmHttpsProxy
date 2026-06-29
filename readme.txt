@@ -138,14 +138,18 @@ B. 服务端认客户端(clientCaPins,即「客户端也出证书」的双向 TL
                  -cn= -days= -out=前缀
   caSignCert     用 CA 给端点签发客户端证书链(叶子+CA)。
                  -caCert= -caKey= -cn= -days= -out=前缀
-  serve          读 JSON 配置启动网关:-Config=server.json
-                 证书/私钥两组各自含义明确的字段(每字段只表示一件事,不重载):
+  serve          读 JSON 配置启动网关:-Config=server.json。异步 Serve + 监听 Ctrl+C/SIGTERM,
+                 收到信号即优雅停服;启动后向 stdout 打印实际监听 URL(scheme://DisplayIP:实际端口)。
+                 JSON 配置类型 = hgmHttpsProxyServer.ServerFileConfig(放在 server 库并导出,方便上层
+                 代码远程下发这份 JSON);ServerFileConfig.ToServerConfig() 完成证书解析与生成。
+                 证书聚在 ServerTlsCert 指针字段下(每字段只表示一件事,不重载):
                    内嵌组:TLSCertPEM / TLSKeyPEM(PEM 文本)
-                   文件组:TLSCertFile / TLSKeyFile(文件路径)
-                 证书与私钥各自在「内嵌」「文件」里二选一;两组都空 = 明文(仅 demo)。
+                   文件组:TLSCertFile / TLSKeyFile(文件路径;两文件都不存在则首启自动生成并落盘)
+                 证书与私钥各自在「内嵌」「文件」里二选一;ServerTlsCert 整体为 nil/空 = 内存生成自签证书。
                  其余 JSON 字段:Listen / AcceptedBasic{user:pass} / ClientCaPins[] /
-                 AllowedCIDRs[] / TargetAllowlist[] / RelayIdleTimeoutSeconds(0=默认2分钟,负=永不超时)。
-                 (DialUpstream 等函数型注入点只能代码对接,不进 JSON。)
+                 AllowedCIDRs[] / TargetAllowlist[] / RelayIdleTimeoutSeconds(0=默认2分钟,负=永不超时) /
+                 DisplayIP(打印 URL 用的 IP,空=127.0.0.1,由调用者自行替换成真实可达地址)。
+                 (OnAudit/DialUpstream 等函数型注入点只能代码对接,不进 JSON。)
   probe          用代理访问一个目标 URL,把目标返回的原始 http/https 字节原样打到 stdout
                  (不解析 HTTP),用来测一条代理 URL 是否可用。
                  -forward=<代理URL> -url=<目标URL> [-clientCert= -clientKey=]
