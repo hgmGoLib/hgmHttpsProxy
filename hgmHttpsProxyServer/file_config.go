@@ -1,7 +1,6 @@
 package hgmHttpsProxyServer
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -69,7 +68,9 @@ func (fc *ServerFileConfig) ToServerConfig() (ServerConfig, error) {
 	return cfg, nil
 }
 
-// resolve 取出服务端证书的 PEM。nil 接收者(配置未填 ServerTlsCert)= 内存生成自签证书。
+// resolve 取出服务端证书的 PEM。自签只在「完全没配 ServerTlsCert」(nil 接收者)时发生;
+// 非 nil 但配置不自洽(内嵌与文件同填、只填一半、啥都没填)都是配置错误,直接 panic 报「配置有问题」,
+// 不退而求其次去自签(那会掩盖配置笔误)。返回的 err 只用于文件读写/生成这类真实 I/O 失败。
 func (c *ServerTlsCert) resolve() (certPEM, keyPEM []byte, err error) {
 	if c == nil {
 		return GenServerCert("hgmHttpsProxy-gateway", nil, []string{"127.0.0.1"}, 825)
@@ -78,20 +79,20 @@ func (c *ServerTlsCert) resolve() (certPEM, keyPEM []byte, err error) {
 	hasFile := c.TLSCertFile != "" || c.TLSKeyFile != ""
 	switch {
 	case hasInline && hasFile:
-		return nil, nil, errors.New("ServerTlsCert: 内嵌 PEM 与文件路径只能二选一")
+		panic("ServerTlsCert 配置有问题:内嵌 PEM 与文件路径只能二选一")
 	case hasInline:
 		if c.TLSCertPEM == "" || c.TLSKeyPEM == "" {
-			return nil, nil, errors.New("ServerTlsCert: TLSCertPEM / TLSKeyPEM 必须同时提供")
+			panic("ServerTlsCert 配置有问题:TLSCertPEM / TLSKeyPEM 必须同时提供")
 		}
 		return []byte(c.TLSCertPEM), []byte(c.TLSKeyPEM), nil
 	case hasFile:
 		if c.TLSCertFile == "" || c.TLSKeyFile == "" {
-			return nil, nil, errors.New("ServerTlsCert: TLSCertFile / TLSKeyFile 必须同时提供")
+			panic("ServerTlsCert 配置有问题:TLSCertFile / TLSKeyFile 必须同时提供")
 		}
 		return loadOrGenCertFiles(c.TLSCertFile, c.TLSKeyFile)
 	default:
-		// 空结构体等同未配置:内存生成自签证书。
-		return GenServerCert("hgmHttpsProxy-gateway", nil, []string{"127.0.0.1"}, 825)
+		// 非 nil 但四个字段全空:配置有问题。自签只走 ServerTlsCert==nil,这里不兜底。
+		panic("ServerTlsCert 配置有问题:既未填内嵌 PEM 也未填文件路径(需自签请把整个 ServerTlsCert 留空)")
 	}
 }
 
@@ -122,7 +123,7 @@ func loadOrGenCertFiles(certFile, keyFile string) (certPEM, keyPEM []byte, err e
 		}
 		return certPEM, keyPEM, nil
 	default:
-		return nil, nil, fmt.Errorf("ServerTlsCert: %s 与 %s 必须同时存在或同时不存在(当前只有一个存在,拒绝半套证书启动)", certFile, keyFile)
+		panic(fmt.Sprintf("ServerTlsCert 配置有问题:%s 与 %s 必须同时存在或同时不存在(当前只有一个存在,拒绝半套证书启动)", certFile, keyFile))
 	}
 }
 
