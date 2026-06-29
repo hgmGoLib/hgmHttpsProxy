@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/hgmGoLib/hgmHttpsProxy/hgmHttpsProxyServer"
 )
@@ -32,43 +31,17 @@ func cmdServe(args []string) error {
 		return fmt.Errorf("解析配置 JSON: %w", err)
 	}
 
-	cfg, err := fc.ToServerConfig()
-	if err != nil {
-		return err
-	}
-	cfg.OnAudit = func(ev hgmHttpsProxyServer.AuditEvent) {
-		log.Printf("[audit] remote=%s user=%s target=%s status=%d reason=%s up=%d down=%d dur=%s",
-			ev.RemoteAddr, ev.User, ev.Target, ev.Status, ev.Reason, ev.BytesToTarget, ev.BytesToClient, ev.Duration)
-	}
+	// 简单版:解析+默认审计+后台跑都收在 RunFileConfigAsyncSimple 里。主协程等 Ctrl+C /
+	// SIGTERM,收到直接 Close(没有同时拉起新版进程的场景,不必 Shutdown 等在飞隧道排空)。
+	s := hgmHttpsProxyServer.RunFileConfigAsyncSimple(fc)
+	defer s.Close()
+	fmt.Println(listenURL(&fc, s.Addr(), !fc.UseHttp))
 
-	s, err := hgmHttpsProxyServer.NewServer(cfg)
-	if err != nil {
-		return err
-	}
-	// 先 Listen 绑定端口:端口占用等错误在此同步暴露,且 Addr() 立即可用于打印实际 URL。
-	if err := s.Listen(); err != nil {
-		return err
-	}
-	log.Printf("hgmHttpsProxyServer 监听 %s (tls=%v clientCaPins=%d basicUsers=%d targets=%d)",
-		cfg.Listen, len(cfg.TLSCertPEM) > 0, len(cfg.ClientCaPins), len(cfg.AcceptedBasic), len(cfg.TargetAllowlist))
-	fmt.Println(listenURL(&fc, s.Addr(), len(cfg.TLSCertPEM) > 0))
-
-	// 异步跑 Serve,主协程等 Ctrl+C / SIGTERM,收到即优雅停服。
-	errCh := make(chan error, 1)
-	go func() { errCh <- s.Serve() }()
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	select {
-	case err := <-errCh: // Serve 自己挂了(致命错误)
-		return err
-	case sig := <-sigCh:
-		log.Printf("收到信号 %s,正在关闭网关...", sig)
-		if err := s.Shutdown(10 * time.Second); err != nil {
-			log.Printf("关闭网关: %v", err)
-		}
-		<-errCh // 等 Serve 退出
-		return nil
-	}
+	sig := <-sigCh
+	log.Printf("收到信号 %s,正在关闭网关...", sig)
+	return nil
 }
 
 // listenURL 拼出打印给人看的监听 URL。host 用配置里的 DisplayIP(空则 127.0.0.1,让调用者
