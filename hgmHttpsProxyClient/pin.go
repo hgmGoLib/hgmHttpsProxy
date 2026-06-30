@@ -21,6 +21,12 @@ type Pin struct {
 	Sum  []byte // 原始哈希字节(sha256 为 32 字节)
 }
 
+// String 还原成 "sha256:base64url(无填充)"(ComputeSPKIPin/ParsePins 的逆),便于把已解析的
+// pin 回填进 forward_to URL 的 serverPins/clientCaPins。
+func (p Pin) String() string {
+	return p.Algo + ":" + base64.RawURLEncoding.EncodeToString(p.Sum)
+}
+
 // ComputeSPKIPin 计算证书 SPKI 的 pin 字符串:"sha256:base64url(无填充)"。
 // base64url 是为了能直接放进 URL query(标准 base64 的 +/= 会破坏 query)。
 func ComputeSPKIPin(cert *x509.Certificate) string {

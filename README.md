@@ -27,7 +27,7 @@
 | `hgmHttpsProxyTest` | 集成测试包(真 TCP 监听)。 |
 | `example/safest` | 最安全用法介绍 + 可跑 demo + 自动测试。 |
 
-绝大多数调用方从代码对接 —— 直接用 `ClientConfig.DialContext` / `hgmHttpsProxyServer.NewServer`;
+绝大多数调用方从代码对接 —— 直接用 `ClientConfig.Dial` / `hgmHttpsProxyServer.NewServer`;
 CLI 只是示例入口,两个库刻意不含命令行代码。
 
 ## 客户端用法(最安全配置)
@@ -36,8 +36,9 @@ CLI 只是示例入口,两个库刻意不含命令行代码。
 cfg, _ := hgmHttpsProxyClient.ParseForwardURL(
     "https://u:p@gw:9443?serverPins=sha256:...&clientCaPins=sha256:...")
 cfg.ClientCertPEM, cfg.ClientKeyPEM = clientCert, clientKey // 客户端证书(第二因子)
-conn, err := cfg.DialContext(ctx, "api.openai.com:443", map[string]string{"X-Endpoint-Id": id})
-// conn 即到目标的隧道,在其上跑端到端 TLS / 任意字节流
+resp := cfg.Dial(hgmHttpsProxyClient.DialReq{Ctx: ctx, Target: "api.openai.com:443"})
+// resp.Conn 即到目标的隧道(成功时),resp.Status = 网关 CONNECT 响应码,resp.Err = 失败原因。
+// 单入参 DialReq、单返回 DialResp;DialReq.Ctx 控制取消/超时(nil = Background)。
 ```
 
 这是安全分级 **high**(`pinned_clientcert_basic`):服务端被 pin(防假网关/中间人)+ 账号密码

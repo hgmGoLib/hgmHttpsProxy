@@ -137,7 +137,7 @@ func TestSafestRejectsWrongClientCA(t *testing.T) {
 	cfg, _ := hgmHttpsProxyClient.ParseForwardURL(forwardTo)
 	cfg.ClientCertPEM, cfg.ClientKeyPEM = evilChain, evilKey // 偷了 URL,但证书是 caEvil 签的
 
-	_, err = cfg.Dial(echoAddr, nil)
+	err = cfg.Dial(hgmHttpsProxyClient.DialReq{Target: echoAddr}).Err
 	if err == nil {
 		t.Fatal("错误 CA 的客户端竟连上了, 双向 TLS 第二因子失效")
 	}

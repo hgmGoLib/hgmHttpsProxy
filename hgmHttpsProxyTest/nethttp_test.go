@@ -140,7 +140,8 @@ func TestNetHTTP_C_NetHTTPOverOurTunnel(t *testing.T) {
 	client := &http.Client{Transport: &http.Transport{
 		// 标准 Transport 的「拨号」改走本库出口代理隧道:addr 即目标 host:port。
 		DialContext: func(_ context.Context, _, addr string) (net.Conn, error) {
-			return cfg.Dial(addr, nil)
+			dr := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: addr})
+			return dr.Conn, dr.Err
 		},
 	}}
 	defer client.CloseIdleConnections()

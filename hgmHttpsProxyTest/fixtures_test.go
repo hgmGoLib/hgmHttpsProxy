@@ -92,10 +92,11 @@ func newEcho(t *testing.T) string {
 // roundTrip 经 cfg 拨号到回显目标,写入一段 nonce 再读回,断言一致 —— 证明隧道真的通了。
 func roundTrip(t *testing.T, cfg *hgmHttpsProxyClient.ClientConfig, echoAddr, nonce string) {
 	t.Helper()
-	conn, err := cfg.Dial(echoAddr, map[string]string{"X-Endpoint-Id": "test"})
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
+	dr := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: echoAddr})
+	if dr.Err != nil {
+		t.Fatalf("Dial: %v", dr.Err)
 	}
+	conn := dr.Conn
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	if _, err := io.WriteString(conn, nonce); err != nil {

@@ -115,8 +115,7 @@ func ReadConnectRequest(br *bufio.Reader) (*ConnectRequest, error) {
 func validHeaderValue(v string) bool { return !strings.ContainsAny(v, "\r\n") }
 
 // WriteConnectRequest 客户端用:写 CONNECT 请求。proxyAuth 空则不写认证头。
-// extra 注入审计头(如 X-Endpoint-Id),值不得含 CRLF。
-func WriteConnectRequest(w io.Writer, target, proxyAuth string, extra map[string]string) error {
+func WriteConnectRequest(w io.Writer, target, proxyAuth string) error {
 	if _, _, err := net.SplitHostPort(target); err != nil {
 		return fmt.Errorf("非法目标 %q: %w", target, err)
 	}
@@ -128,12 +127,6 @@ func WriteConnectRequest(w io.Writer, target, proxyAuth string, extra map[string
 			return errors.New("proxyAuth 含非法字符")
 		}
 		sb.WriteString(HeaderProxyAuthorization + ": " + proxyAuth + "\r\n")
-	}
-	for k, v := range extra {
-		if !validHeaderValue(k) || !validHeaderValue(v) {
-			return fmt.Errorf("头 %q 含非法字符", k)
-		}
-		sb.WriteString(k + ": " + v + "\r\n")
 	}
 	sb.WriteString("\r\n")
 	_, err := io.WriteString(w, sb.String())
