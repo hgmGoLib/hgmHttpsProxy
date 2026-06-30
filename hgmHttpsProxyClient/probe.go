@@ -38,10 +38,11 @@ func Probe(cfg *ClientConfig, targetURL string, out io.Writer) error {
 	}
 
 	// 经代理建到目标 host:port 的隧道。
-	conn, err := cfg.Dial(net.JoinHostPort(host, port), nil)
-	if err != nil {
-		return fmt.Errorf("经代理拨号目标失败: %w", err)
+	dr := cfg.Dial(DialReq{Target: net.JoinHostPort(host, port)})
+	if dr.Err != nil {
+		return fmt.Errorf("经代理拨号目标失败: %w", dr.Err)
 	}
+	conn := dr.Conn
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 

@@ -165,9 +165,9 @@ func TestReject_ClientCertShapes(t *testing.T) {
 				cfg.ClientCertPEM, cfg.ClientKeyPEM = tc.chain, tc.key
 			}
 			// 客户端侧错误笼统(certificate / EOF / broken pipe 皆可能),只断言「没连上」。
-			conn, derr := cfg.Dial("127.0.0.1:9", nil)
-			if derr == nil {
-				_ = conn.Close()
+			dr := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: "127.0.0.1:9"})
+			if dr.Err == nil {
+				_ = dr.Conn.Close()
 				t.Fatal("坏的客户端证书竟然连上了(双向 TLS 失守)")
 			}
 			sink.waitReason(t, tc.wantReason) // 真正的判定:服务端因何拒绝
@@ -224,7 +224,7 @@ func TestReject_MalformedProxyAuth(t *testing.T) {
 		t.Fatalf("TLS 握手不应失败: %v", err)
 	}
 	// "Basic %%%" —— 前缀合法但 base64 解不开,服务端 ParseBasicAuth 失败 → auth_failed。
-	if err := hgmHttpsProxyClient.WriteConnectRequest(tc, "127.0.0.1:9", "Basic %%%not-base64%%%", nil); err != nil {
+	if err := hgmHttpsProxyClient.WriteConnectRequest(tc, "127.0.0.1:9", "Basic %%%not-base64%%%"); err != nil {
 		t.Fatal(err)
 	}
 	code, _, _, err := hgmHttpsProxyClient.ReadConnectResponseStatus(bufio.NewReader(tc))

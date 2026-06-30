@@ -41,10 +41,11 @@ func TestAudit_ConnClosed(t *testing.T) {
 	})
 	cfg, _ := hgmHttpsProxyClient.ParseForwardURL(fmt.Sprintf("https://u:p@%s?serverPins=%s", gw.Addr(), pin))
 
-	conn, err := cfg.Dial(echo, nil)
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
+	dr := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: echo})
+	if dr.Err != nil {
+		t.Fatalf("Dial: %v", dr.Err)
 	}
+	conn := dr.Conn
 	const msg = "audit-bytes-123456"
 	if _, err := conn.Write([]byte(msg)); err != nil {
 		t.Fatal(err)
@@ -73,10 +74,11 @@ func TestShutdown_DrainsInflight(t *testing.T) {
 		AcceptedBasic: map[string]string{"u": "p"},
 	})
 	cfg, _ := hgmHttpsProxyClient.ParseForwardURL(fmt.Sprintf("https://u:p@%s?serverPins=%s", gw.Addr(), pin))
-	conn, err := cfg.Dial(echo, nil) // 一条在飞隧道
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
+	dr := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: echo}) // 一条在飞隧道
+	if dr.Err != nil {
+		t.Fatalf("Dial: %v", dr.Err)
 	}
+	conn := dr.Conn
 
 	shutErr := make(chan error, 1)
 	go func() { shutErr <- gw.Shutdown(3 * time.Second) }()
@@ -109,14 +111,15 @@ func TestShutdown_TimeoutForceCloses(t *testing.T) {
 		RelayIdleTimeout: time.Minute, // 调大,确保隧道不会自己 idle 关,逼 Shutdown 走强关
 	})
 	cfg, _ := hgmHttpsProxyClient.ParseForwardURL(fmt.Sprintf("https://u:p@%s?serverPins=%s", gw.Addr(), pin))
-	conn, err := cfg.Dial(echo, nil)
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
+	dr := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: echo})
+	if dr.Err != nil {
+		t.Fatalf("Dial: %v", dr.Err)
 	}
+	conn := dr.Conn
 	defer conn.Close()
 
 	start := time.Now()
-	err = gw.Shutdown(300 * time.Millisecond)
+	err := gw.Shutdown(300 * time.Millisecond)
 	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("空闲在飞隧道应触发超时强关并返回错误")
@@ -141,10 +144,11 @@ func TestClose_Immediate(t *testing.T) {
 		RelayIdleTimeout: time.Minute,
 	})
 	cfg, _ := hgmHttpsProxyClient.ParseForwardURL(fmt.Sprintf("https://u:p@%s?serverPins=%s", gw.Addr(), pin))
-	conn, err := cfg.Dial(echo, nil) // 一条在飞隧道,Close 不应被它拖住
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
+	dr := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: echo}) // 一条在飞隧道,Close 不应被它拖住
+	if dr.Err != nil {
+		t.Fatalf("Dial: %v", dr.Err)
 	}
+	conn := dr.Conn
 	defer conn.Close()
 
 	start := time.Now()
@@ -155,7 +159,7 @@ func TestClose_Immediate(t *testing.T) {
 		t.Fatalf("Close 应立即返回(不等在飞),用了 %v", time.Since(start))
 	}
 	// listener 已关,新连接应失败。
-	if _, derr := cfg.Dial(echo, nil); derr == nil {
+	if cfg.Dial(hgmHttpsProxyClient.DialReq{Target: echo}).Err == nil {
 		t.Fatal("Close 后仍能新建连接")
 	}
 }

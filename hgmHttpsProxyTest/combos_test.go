@@ -160,12 +160,12 @@ func TestCombos_Rejected(t *testing.T) {
 // dialErr 断言 cfg.Dial 失败且错误信息含 want 子串。
 func dialErr(t *testing.T, cfg *hgmHttpsProxyClient.ClientConfig, target, want string) {
 	t.Helper()
-	conn, err := cfg.Dial(target, nil)
-	if err == nil {
-		_ = conn.Close()
+	dr := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: target})
+	if dr.Err == nil {
+		_ = dr.Conn.Close()
 		t.Fatalf("期望失败(含 %q),却连上了", want)
 	}
-	if !strings.Contains(err.Error(), want) {
-		t.Fatalf("期望错误含 %q, 得: %v", want, err)
+	if !strings.Contains(dr.Err.Error(), want) {
+		t.Fatalf("期望错误含 %q, 得: %v", want, dr.Err)
 	}
 }

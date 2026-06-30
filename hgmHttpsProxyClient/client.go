@@ -87,34 +87,39 @@ func (c *ClientConfig) Security() SecurityLevel {
 // ProxyAuthHeader 返回 Proxy-Authorization 头值(可空)。
 func (c *ClientConfig) ProxyAuthHeader() string { return EncodeBasicAuth(c.User, c.Pass) }
 
-// DialResp 一次 CONNECT 拨号的结果对象。成功与失败都返回(永不为 nil),让调用方直接按
-// Status 分类,而无需解析 err 文案。
+// DialReq 一次 CONNECT 拨号的输入对象(单入参,可选项都收敛进来)。
+type DialReq struct {
+	// Ctx 拨号 / 外层 TLS 握手 / CONNECT 收发都跟随其取消与截止时间。nil = context.Background()。
+	// 无 deadline 时按 ClientConfig.DialTimeout(默认 10s)派生一个。
+	Ctx context.Context
+	// Target 目标 host:port(CONNECT 的目标)。
+	Target string
+}
+
+// DialResp 一次 CONNECT 拨号的结果对象(单返回值,成功与失败都返回,Err 内含)。
 type DialResp struct {
 	// Conn 成功(Status==200)时为到目标的隧道 conn;失败为 nil。
 	Conn net.Conn
 	// Status 网关对 CONNECT 的响应状态码:
-	//   - 拿到网关响应:实际码(200 成功 / 403 / 407 / ...);非 200 时 Conn=nil 且 err 非 nil。
-	//   - 没拿到响应(拨号失败 / 外层 TLS 握手失败 / 读响应失败):0,此时 err 区分具体阶段。
+	//   - 拿到网关响应:实际码(200 成功 / 403 / 407 / ...);非 200 时 Conn=nil 且 Err 非 nil。
+	//   - 没拿到响应(拨号失败 / 外层 TLS 握手失败 / 读响应失败):0,此时 Err 区分具体阶段。
 	Status int
 	// Phrase 响应原因短语(可空)。
 	Phrase string
+	// Err 失败原因;成功为 nil。调用方优先按 Status 分类,Err 仅作展示/日志。
+	Err error
 }
 
-// Dial 经出口代理建立到 targetHostPort 的隧道,返回隧道 net.Conn(已发 CONNECT 且收到 200)。
-// extraHeaders 可注入审计头(如 X-Endpoint-Id),值不得含 CRLF,可为 nil。
-// 等价于 DialContext(context.Background(), ...),并丢弃 DialResp(只关心成功/失败时用本入口;
-// 接 http.Transport.DialContext / gRPC dialer 等只认 (net.Conn, error) 的调用栈也用它)。
-func (c *ClientConfig) Dial(targetHostPort string, extraHeaders map[string]string) (net.Conn, error) {
-	resp, err := c.DialContext(context.Background(), targetHostPort, extraHeaders)
-	return resp.Conn, err
-}
-
-// DialContext 同 Dial,但拨号 / TLS 握手 / CONNECT 收发都跟随 ctx 的取消与截止时间,且返回
-// DialResp 对象(Status 供调用方按码分类,无需解析 err 文案)。resp 永不为 nil。
-// ctx 无 deadline 时按 DialTimeout(默认 10s)派生一个,所以 ctx 取消或超时都会让本调用尽快返回。
-func (c *ClientConfig) DialContext(ctx context.Context, targetHostPort string, extraHeaders map[string]string) (*DialResp, error) {
-	if _, _, err := net.SplitHostPort(targetHostPort); err != nil {
-		return &DialResp{}, fmt.Errorf("非法目标 %q: %w", targetHostPort, err)
+// Dial 经出口代理建立到 req.Target 的 CONNECT 隧道。单入参 DialReq、单返回 DialResp:
+// 拨号 / 外层 TLS 握手 / CONNECT 收发都跟随 req.Ctx(nil = Background)的取消与截止时间;
+// ctx 无 deadline 时按 DialTimeout(默认 10s)派生一个,故 ctx 取消或超时都会让本调用尽快返回。
+func (c *ClientConfig) Dial(req DialReq) DialResp {
+	ctx := req.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, _, err := net.SplitHostPort(req.Target); err != nil {
+		return DialResp{Err: fmt.Errorf("非法目标 %q: %w", req.Target, err)}
 	}
 	// ctx 无 deadline 时用 DialTimeout 派生一个,统一交给 dial/握手/CONNECT 兜底。
 	if _, ok := ctx.Deadline(); !ok {
@@ -130,21 +135,21 @@ func (c *ClientConfig) DialContext(ctx context.Context, targetHostPort string, e
 	var d net.Dialer
 	raw, err := d.DialContext(ctx, "tcp", c.Host)
 	if err != nil {
-		return &DialResp{}, fmt.Errorf("拨号网关 %s: %w", c.Host, err)
+		return DialResp{Err: fmt.Errorf("拨号网关 %s: %w", c.Host, err)}
 	}
 	var conn net.Conn = raw
 	if c.Scheme == "https" {
 		tlsCfg, terr := c.tlsConfig()
 		if terr != nil {
 			raw.Close()
-			return &DialResp{}, terr
+			return DialResp{Err: terr}
 		}
 		// 用 tls.Client(而非 tls.Dial)以便完全掌控 SNI:tls.Dial 会在 ServerName 为空时
 		// 用拨号地址回填 SNI,nosni 就失效了。HandshakeContext 让握手也跟随 ctx。
 		tc := tls.Client(raw, tlsCfg)
 		if err := tc.HandshakeContext(ctx); err != nil {
 			raw.Close()
-			return &DialResp{}, fmt.Errorf("TLS 握手 %s: %w", c.Host, err)
+			return DialResp{Err: fmt.Errorf("TLS 握手 %s: %w", c.Host, err)}
 		}
 		conn = tc
 	}
@@ -153,22 +158,22 @@ func (c *ClientConfig) DialContext(ctx context.Context, targetHostPort string, e
 		_ = conn.SetDeadline(dl)
 	}
 
-	if err := WriteConnectRequest(conn, targetHostPort, c.ProxyAuthHeader(), extraHeaders); err != nil {
+	if err := WriteConnectRequest(conn, req.Target, c.ProxyAuthHeader()); err != nil {
 		conn.Close()
-		return &DialResp{}, fmt.Errorf("写 CONNECT: %w", err)
+		return DialResp{Err: fmt.Errorf("写 CONNECT: %w", err)}
 	}
 	br := bufio.NewReader(conn)
 	code, phrase, _, err := ReadConnectResponseStatus(br)
 	if err != nil {
 		conn.Close()
-		return &DialResp{}, fmt.Errorf("读 CONNECT 响应: %w", err)
+		return DialResp{Err: fmt.Errorf("读 CONNECT 响应: %w", err)}
 	}
 	if code != 200 {
 		conn.Close()
-		return &DialResp{Status: code, Phrase: phrase}, fmt.Errorf("网关拒绝 CONNECT: %d %s", code, phrase)
+		return DialResp{Status: code, Phrase: phrase, Err: fmt.Errorf("网关拒绝 CONNECT: %d %s", code, phrase)}
 	}
 	_ = conn.SetDeadline(time.Time{}) // 清超时,允许长连接
-	return &DialResp{Conn: &BufferedConn{Conn: conn, R: br}, Status: code, Phrase: phrase}, nil
+	return DialResp{Conn: &BufferedConn{Conn: conn, R: br}, Status: code, Phrase: phrase}
 }
 
 // tlsConfig 构造端点 dial 网关的 TLS 配置。

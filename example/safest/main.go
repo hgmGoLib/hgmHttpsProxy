@@ -112,10 +112,11 @@ func demo(out io.Writer) error {
 	}
 
 	// 7) 经网关拨号到目标 + 回环验证。
-	conn, err := cfg.Dial(echoAddr, map[string]string{"X-Endpoint-Id": "endpoint-001"})
-	if err != nil {
-		return fmt.Errorf("Dial: %w", err)
+	dr := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: echoAddr})
+	if dr.Err != nil {
+		return fmt.Errorf("Dial: %w", dr.Err)
 	}
+	conn := dr.Conn
 	defer conn.Close()
 
 	const msg = "hello-safest"

@@ -25,8 +25,8 @@ func TestDialContext_Cancelled(t *testing.T) {
 	cancel() // 拨号前就取消
 
 	start := time.Now()
-	resp, err := cfg.DialContext(ctx, "127.0.0.1:9", nil)
-	if err == nil {
+	resp := cfg.Dial(hgmHttpsProxyClient.DialReq{Ctx: ctx, Target: "127.0.0.1:9"})
+	if resp.Err == nil {
 		_ = resp.Conn.Close()
 		t.Fatal("已取消的 ctx 竟拨号成功")
 	}
@@ -46,10 +46,11 @@ func TestRelayIdleTimeout(t *testing.T) {
 	})
 	cfg, _ := hgmHttpsProxyClient.ParseForwardURL(fmt.Sprintf("https://u:p@%s?serverPins=%s", gw.Addr(), pin))
 
-	conn, err := cfg.Dial(echo, nil)
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
+	dr := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: echo})
+	if dr.Err != nil {
+		t.Fatalf("Dial: %v", dr.Err)
 	}
+	conn := dr.Conn
 	defer conn.Close()
 
 	// 建好隧道后一个字节都不发 → 两个方向都空闲 → 服务端 idle timer 到点关隧道。
@@ -74,10 +75,11 @@ func TestRelayIdleTimeout_NotKilledWhenActive(t *testing.T) {
 		RelayIdleTimeout: 200 * time.Millisecond,
 	})
 	cfg, _ := hgmHttpsProxyClient.ParseForwardURL(fmt.Sprintf("https://u:p@%s?serverPins=%s", gw.Addr(), pin))
-	conn, err := cfg.Dial(echo, nil)
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
+	dr := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: echo})
+	if dr.Err != nil {
+		t.Fatalf("Dial: %v", dr.Err)
 	}
+	conn := dr.Conn
 	defer conn.Close()
 
 	// 每 50ms 来回一次,持续 ~500ms(> idle 200ms);活动应不断重置 idle timer。

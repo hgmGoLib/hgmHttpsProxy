@@ -103,10 +103,11 @@ func TestE2E_PinnedBasic_RoundTrip(t *testing.T) {
 		t.Fatalf("安全分级应 pinned_basic,得 %q", lvl.Code)
 	}
 
-	conn, err := cfg.Dial(echoAddr, nil)
-	if err != nil {
-		t.Fatalf("Dial: %v", err)
+	dr := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: echoAddr})
+	if dr.Err != nil {
+		t.Fatalf("Dial: %v", dr.Err)
 	}
+	conn := dr.Conn
 	defer conn.Close()
 
 	const msg = "hello-egress-proxy"
@@ -132,7 +133,7 @@ func TestE2E_WrongPassword(t *testing.T) {
 	})
 	fwd := fmt.Sprintf("https://alice:WRONG@%s?serverPins=%s", s.Addr(), pin)
 	cfg, _ := hgmHttpsProxyClient.ParseForwardURL(fwd)
-	_, err := cfg.Dial("127.0.0.1:1", nil)
+	err := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: "127.0.0.1:1"}).Err
 	if err == nil || !strings.Contains(err.Error(), "403") {
 		t.Fatalf("期望 403 拒绝,得 %v", err)
 	}
@@ -149,7 +150,7 @@ func TestE2E_PinMismatch(t *testing.T) {
 	})
 	fwd := fmt.Sprintf("https://alice:s3cret@%s?serverPins=%s", s.Addr(), otherPin)
 	cfg, _ := hgmHttpsProxyClient.ParseForwardURL(fwd)
-	_, err := cfg.Dial("127.0.0.1:1", nil)
+	err := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: "127.0.0.1:1"}).Err
 	if err == nil || !strings.Contains(err.Error(), "握手") {
 		t.Fatalf("期望握手因 pin 不符失败,得 %v", err)
 	}
@@ -166,7 +167,7 @@ func TestE2E_MissingAuth(t *testing.T) {
 	// 不带 userinfo → 不发 Proxy-Authorization
 	fwd := fmt.Sprintf("https://%s?serverPins=%s", s.Addr(), pin)
 	cfg, _ := hgmHttpsProxyClient.ParseForwardURL(fwd)
-	_, err := cfg.Dial("127.0.0.1:1", nil)
+	err := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: "127.0.0.1:1"}).Err
 	if err == nil || !strings.Contains(err.Error(), "407") {
 		t.Fatalf("期望 407,得 %v", err)
 	}
@@ -185,7 +186,7 @@ func TestE2E_TargetDenied(t *testing.T) {
 	})
 	fwd := fmt.Sprintf("https://alice:s3cret@%s?serverPins=%s", s.Addr(), pin)
 	cfg, _ := hgmHttpsProxyClient.ParseForwardURL(fwd)
-	_, err := cfg.Dial(echoAddr, nil)
+	err := cfg.Dial(hgmHttpsProxyClient.DialReq{Target: echoAddr}).Err
 	if err == nil || !strings.Contains(err.Error(), "403") {
 		t.Fatalf("期望 403 target_denied,得 %v", err)
 	}
