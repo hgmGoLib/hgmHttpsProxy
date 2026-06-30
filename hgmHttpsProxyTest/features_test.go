@@ -25,9 +25,9 @@ func TestDialContext_Cancelled(t *testing.T) {
 	cancel() // 拨号前就取消
 
 	start := time.Now()
-	conn, err := cfg.DialContext(ctx, "127.0.0.1:9", nil)
+	resp, err := cfg.DialContext(ctx, "127.0.0.1:9", nil)
 	if err == nil {
-		_ = conn.Close()
+		_ = resp.Conn.Close()
 		t.Fatal("已取消的 ctx 竟拨号成功")
 	}
 	if time.Since(start) > 2*time.Second {

@@ -102,10 +102,13 @@ B. 服务端认客户端(clientCaPins,即「客户端也出证书」的双向 TL
 -------------------------
   cfg, _ := hgmHttpsProxyClient.ParseForwardURL("https://u:p@gw:9443?serverPins=sha256:...&clientCaPins=sha256:...")
   cfg.ClientCertPEM, cfg.ClientKeyPEM = clientCert, clientKey // 客户端证书(第二因子),由集成方注入
-  conn, err := cfg.DialContext(ctx, "api.openai.com:443", map[string]string{"X-Endpoint-Id": id})
-  // conn 即到目标的隧道,在其上跑端到端 TLS / 任意字节流
-  // DialContext:拨号/TLS握手/CONNECT 都跟随 ctx 取消与截止时间(接 http.Transport.DialContext 的推荐入口);
-  // Dial(无 ctx)= DialContext(context.Background(), ...) 的薄封装。
+  resp, err := cfg.DialContext(ctx, "api.openai.com:443", map[string]string{"X-Endpoint-Id": id})
+  // resp.Conn 即到目标的隧道(成功时),在其上跑端到端 TLS / 任意字节流;resp 永不为 nil。
+  // resp.Status = 网关 CONNECT 响应码:200 成功;403/407/... = 网关拒绝(此时 err 非 nil);
+  //              0 = 没拿到响应(拨号/外层 TLS 握手/读响应失败)。调用方按 Status 分类,无需解析 err 文案。
+  // DialContext:拨号/TLS握手/CONNECT 都跟随 ctx 取消与截止时间;
+  // Dial(无 ctx)= DialContext(context.Background(), ...) 的薄封装,丢弃 resp 只回 (net.Conn, error),
+  //              接 http.Transport.DialContext / gRPC dialer 等只认 (net.Conn, error) 的调用栈用它。
 
 用法(服务端)
 -------------
@@ -117,7 +120,7 @@ B. 服务端认客户端(clientCaPins,即「客户端也出证书」的双向 TL
       // 可选注入点:
       // DialUpstream: func(ctx, target)(net.Conn,error){...}  // 自定义「下一跳」拨号:区域选路/链式上游代理/自定义解析;nil=默认直连
       // RelayIdleTimeout: 2*time.Minute                       // 隧道空闲超时:两向都连续这么久无字节即断;0=默认2分钟,负=永不超时
-      // FailureReasonHeader: "X-ASCP-Failure-Reason"          // 拒绝/失败响应里写失败原因的头名;空=默认 "X-Hp-Failure-Reason"
+      // FailureReasonHeader: "X-Gateway-Failure-Reason"       // 拒绝/失败响应里写失败原因的头名;空=默认 "X-Hp-Failure-Reason"
   })
   s.Listen()            // 可选:提前绑定端口,让 Addr() 在 Serve 前可用、端口占用等错误启动阶段同步暴露(Serve 也会自动调用,幂等)
   go s.Serve()
