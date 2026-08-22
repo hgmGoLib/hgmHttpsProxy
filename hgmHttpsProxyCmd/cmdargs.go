@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// 极简命令行参数读取(hgmConsole 风格:只认 -Name=value)。本库刻意零依赖,故不 import
-// hgmLib/hgmConsole,自带这几个够用的小工具。只有 CLI 入口用,所以留在 cmd 包里,
+// 极简命令行参数读取(只认 -Name=value)。本库刻意零依赖,不引入任何命令行库,
+// 自带这几个够用的小工具。只有 CLI 入口用,所以留在 cmd 包里,
 // 不污染 hgmHttpsProxyClient / hgmHttpsProxyServer 这两个纯 API 库。
 
 // argStr 读取 -Name=value;找不到返回 def。Name 区分大小写。

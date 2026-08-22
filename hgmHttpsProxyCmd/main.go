@@ -1,11 +1,11 @@
 // Command hgmHttpsProxyCmd 出口代理网关二进制入口,带子命令。
 //
-// 子命令派发是 hgmConsole 风格(os.Args[1]=命令名,参数走 -Name=value);但本库刻意
-// 零依赖,故不 import hgmLib/hgmConsole,自带一个十几行的小派发器。
+// 子命令派发很朴素(os.Args[1]=命令名,参数走 -Name=value);本库刻意零依赖,
+// 不引入任何命令行库,自带一个十几行的小派发器。
 //
 // 注意:各子命令的「实现」就在本 cmd 包内(serve.go / gencert.go / probe.go / cmdargs.go)。
 // hgmHttpsProxyClient / hgmHttpsProxyServer 两个库刻意只放纯 API、不含任何命令行解析代码——
-// 绝大多数调用方(包括本项目)是从代码对接的,cmd 只是其中一个示例入口。
+// 绝大多数调用方是从代码对接的,cmd 只是其中一个示例入口。
 //
 // 例:
 //

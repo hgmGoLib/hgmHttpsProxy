@@ -52,7 +52,13 @@ func ParseForwardURL(forwardTo string) (*ClientConfig, error) {
 	if scheme != "https" && scheme != "http" {
 		return nil, fmt.Errorf("forward_to scheme 必须 http/https,收到 %q", u.Scheme)
 	}
-	if u.Host == "" {
+	// 🔴 判的是 Hostname() 不是 Host:`https://:9443` 的 Host 是 ":9443"(非空),主机名却是空的。
+	// 老写法放它过闸,拨号时 net.Dial(":9443") 会当成【本机】—— 拨的根本不是任何出口网关,
+	// 而调用方的连通性自检命令把拨号失败报成 exit 1「网关或这台机器出事了」,
+	// 运维照着这个码去查一台其实好好的网关;本机恰好有服务监听这个端口时更糟:
+	// 一条写错的命令会拿到「通了」。缺主机名和整段 host:port 都没写是同一件事 ——
+	// 命令行写错了,在拨号之前就该判掉。
+	if u.Hostname() == "" {
 		return nil, errors.New("forward_to 缺 host:port")
 	}
 	host := u.Host

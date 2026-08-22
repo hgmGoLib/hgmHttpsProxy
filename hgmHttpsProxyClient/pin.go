@@ -49,6 +49,16 @@ func SPKIPinFromCertPEM(certPEM []byte) (string, error) {
 
 // ParsePins 解析逗号分隔的 pin 列表(每项 "sha256:base64")。空串返回 nil。
 // 同时兼容 base64url(无填充)与标准 base64,容错运维手抄。
+//
+// 🔴 解码一律走 Strict():base64 的最后一个字符只有高几位有效(43 字符的 base64url 里
+// 末位只用 4 位),非 Strict 的解码器【不检查那几位多余的比特是不是 0】,于是 "…V0c"
+// 和 "…V0f" 会解出同一串 32 字节 —— 手抄错最后一个字母照样过闸,再 Pin.String() 回填时
+// 又被静默归一成规范形。真实现场是这样的:安装命令收下一个末位写错的
+// -clientCaPins,写盘用原串、打印给人粘进控制台的 forward_to 里却是归一后的另一个字符,
+// 同一次安装里两处对不上;更要命的是它是【笔误】—— 真正想抄的那个 pin(末位 g)与它
+// 解出来的 32 字节根本不是同一个,双向 TLS 必然握手失败,而命令行刚报过"自检通过"。
+// 严格解码把这类笔误挡在纯取值校验那一步(调用方据此退 2 · 服务都还没停),
+// 兑现「一次 pin 笔误不会断一次隧道」这条运维承诺。
 func ParsePins(csv string) ([]Pin, error) {
 	csv = strings.TrimSpace(csv)
 	if csv == "" {
@@ -67,10 +77,14 @@ func ParsePins(csv string) ([]Pin, error) {
 		if algo != "sha256" {
 			return nil, fmt.Errorf("不支持的 pin 算法 %q,仅 sha256", algo)
 		}
-		sum, err := base64.RawURLEncoding.DecodeString(b64)
-		if err != nil {
-			if sum, err = base64.StdEncoding.DecodeString(b64); err != nil {
-				return nil, fmt.Errorf("pin %q base64 解码失败: %w", tok, err)
+		sum, errURL := base64.RawURLEncoding.Strict().DecodeString(b64)
+		if errURL != nil {
+			// 两条路都失败时【两个原文都打出来】:pin 的正规形状是 base64url,
+			// 只报标准 base64 那条会指着 `-`/`_` 说"第 17 字节非法",把人往错处引。
+			var errStd error
+			if sum, errStd = base64.StdEncoding.Strict().DecodeString(b64); errStd != nil {
+				return nil, fmt.Errorf("pin %q base64 解码失败: 按 base64url 解: %v; 按标准 base64 解: %v",
+					tok, errURL, errStd)
 			}
 		}
 		if len(sum) != sha256.Size {

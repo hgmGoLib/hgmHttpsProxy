@@ -20,7 +20,7 @@ hgmHttpsProxy —— 出口正向代理(CONNECT 隧道,标准 Basic 认证,可�
 * hgmHttpsProxyServer    —— 网关服务端(校验 + 隧道转发),import 上面的共享代码。纯 API,无命令行解析。
 * hgmHttpsProxyCmd —— 网关二进制入口:子命令派发器 + 全部 CLI 实现(serve/gencert/probe/cmdargs)。
 
-  重要:绝大多数调用方(含本项目)是从代码对接的——直接用 ClientConfig.Dial /
+  重要:绝大多数调用方是从代码对接的——直接用 ClientConfig.Dial /
   hgmHttpsProxyServer.NewServer 这些 API。cmd 只是一个示例入口,所有命令行解析都关在 cmd 包里,
   client/server 两个库刻意不含任何 CLI 代码。
 * hgmHttpsProxyTest      —— 集成测试包(真 TCP 监听):各配置组合的正确性 + 与 net/http 的协议兼容性
@@ -135,9 +135,9 @@ B. 服务端认客户端(clientCaPins,即「客户端也出证书」的双向 TL
   审计:每条隧道产生两条 200 事件——建立时(Reason="")与结束时(Reason="closed",带
   BytesToTarget/BytesToClient/Duration,供计量与对账)。失败走对应 4xx/5xx + Reason。
 
-命令行子命令(hgmHttpsProxyCmd,hgmConsole 风格,参数 -Name=value)
+命令行子命令(hgmHttpsProxyCmd,参数 -Name=value)
 --------------------------------------------------------------------
-本库零依赖,故不 import hgmConsole,自带十几行小派发器;子命令实现与参数解析全在 cmd 包内
+本库零依赖,不引入任何命令行库,自带十几行小派发器;子命令实现与参数解析全在 cmd 包内
 (serve.go / gencert.go / probe.go / cmdargs.go),client/server 库不含 CLI 代码。
   genServerCert  生成网关自签证书(私钥+证书),打印客户端 serverPins。
                  -cn= -dns=a,b -ip=10.0.0.9(默认 127.0.0.1) -days= -out=前缀
@@ -174,7 +174,7 @@ B. 服务端认客户端(clientCaPins,即「客户端也出证书」的双向 TL
 
 集成约束
 --------
-* 本库零业务依赖,审计 / 通知 / 策略一律通过 OnAudit 回调或配置注入,不 import 上层项目。
+* 本库零业务依赖,审计 / 通知 / 策略一律通过 OnAudit 回调或配置注入,不 import 任何上层业务代码。
 * 双向 TLS 的客户端证书由集成方提供 PEM(本库不感知 enrollment / 任何 PKI 来源)。
 
 限制与部署加固
