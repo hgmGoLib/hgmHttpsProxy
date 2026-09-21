@@ -52,6 +52,8 @@ query 参数:
 SPKI pin 格式
 -------------
 pin = "sha256:" + base64url(无填充)( SHA-256( DER 编码的 SubjectPublicKeyInfo ) )。
+ParsePins 解析时 base64url / 标准 base64、有无 = 填充四种写法都收(一律 Strict 解码、须恰好 32 字节);
+ComputeSPKIPin / Pin.String() 输出统一是上面这个规范形。
 即 RFC 7469(HPKP)沿用、各客户端 pinning 的事实标准。pin 公钥而非整证书:证书续期只要
 密钥不变,pin 仍命中。多个 pin 取 OR,务必保留新旧 pin 重叠窗口做轮换,否则丢钥匙会把端点弄成砖。
 计算:hgmHttpsProxyClient.ComputeSPKIPin(cert)。
