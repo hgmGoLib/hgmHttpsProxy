@@ -38,3 +38,33 @@ func TestParsePinsRejectsNonCanonicalTail(t *testing.T) {
 		t.Errorf("%q 不是规范 base64url,应当当场报错(调用方据此退 2,不该停服务)", typo)
 	}
 }
+
+// BUG-004273/004274:32 字节的 base64 规范写法是 44 字符带一个 `=`;url/标准 × 有无填充四种写法
+// 解出同一串 32 字节。字母表混写、末位笔误仍然拒。
+func TestParsePinsAcceptsPaddingVariants(t *testing.T) {
+	const want = "sha256:47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
+	for _, ok := range []string{
+		want,
+		want + "=",
+		"sha256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+		"sha256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU",
+	} {
+		pins, err := ParsePins(ok)
+		if err != nil {
+			t.Errorf("%q 应当收下: %v", ok, err)
+			continue
+		}
+		if got := pins[0].String(); got != want {
+			t.Errorf("%q 解出的 pin 回填应为 %q · 收到 %q", ok, want, got)
+		}
+	}
+	for _, bad := range []string{
+		"sha256:47DEQpj8HBSa-/TImW-5JCeuQeRkm5NMpJWZG3hSuFU=",
+		"sha256:47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFV=",
+		"sha256:47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU==",
+	} {
+		if _, err := ParsePins(bad); err == nil {
+			t.Errorf("%q 应当拒", bad)
+		}
+	}
+}

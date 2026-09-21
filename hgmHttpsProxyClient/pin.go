@@ -48,7 +48,7 @@ func SPKIPinFromCertPEM(certPEM []byte) (string, error) {
 }
 
 // ParsePins 解析逗号分隔的 pin 列表(每项 "sha256:base64")。空串返回 nil。
-// 同时兼容 base64url(无填充)与标准 base64,容错运维手抄。
+// 同时兼容 base64url 与标准 base64,有无 = 填充都收,容错运维手抄。
 //
 // 🔴 解码一律走 Strict():base64 的最后一个字符只有高几位有效(43 字符的 base64url 里
 // 末位只用 4 位),非 Strict 的解码器【不检查那几位多余的比特是不是 0】,于是 "…V0c"
@@ -77,12 +77,25 @@ func ParsePins(csv string) ([]Pin, error) {
 		if algo != "sha256" {
 			return nil, fmt.Errorf("不支持的 pin 算法 %q,仅 sha256", algo)
 		}
+		// 字母表(base64url / 标准)× 有无 = 填充 四种写法都收(BUG-004273/004274):
+		// 32 字节的规范 base64 本来就是 44 字符带一个 `=`,运维照「32 字节的 base64」手抄出
+		// `…uFU=` 这种 base64url 带填充的写法是正常的;此前只收「url 无填充」与「标准带填充」
+		// 两种,控制台徽章(同口径补齐再解)判「高」,这里却拒 —— 同一串两边结论相反。
+		// 四种都严格解码,解出来的 32 字节是同一串,放宽的只是写法不是判据。
 		sum, errURL := base64.RawURLEncoding.Strict().DecodeString(b64)
+		if errURL != nil && strings.HasSuffix(b64, "=") {
+			sum, errURL = base64.URLEncoding.Strict().DecodeString(b64)
+		}
 		if errURL != nil {
 			// 两条路都失败时【两个原文都打出来】:pin 的正规形状是 base64url,
 			// 只报标准 base64 那条会指着 `-`/`_` 说"第 17 字节非法",把人往错处引。
 			var errStd error
-			if sum, errStd = base64.StdEncoding.Strict().DecodeString(b64); errStd != nil {
+			if strings.HasSuffix(b64, "=") {
+				sum, errStd = base64.StdEncoding.Strict().DecodeString(b64)
+			} else {
+				sum, errStd = base64.RawStdEncoding.Strict().DecodeString(b64)
+			}
+			if errStd != nil {
 				return nil, fmt.Errorf("pin %q base64 解码失败: 按 base64url 解: %v; 按标准 base64 解: %v",
 					tok, errURL, errStd)
 			}
