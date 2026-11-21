@@ -77,8 +77,15 @@ func ParseForwardURL(forwardTo string) (*ClientConfig, error) {
 		}
 	}
 	q := u.Query()
-	if cfg.ServerPins, err = ParsePins(q.Get("serverPins")); err != nil {
-		return nil, err
+	// 重复写的 serverPins(`?serverPins=A&serverPins=B`)每一个取值都要解析,pin 取并集(命中任一即信任)。
+	// 此前只看 q.Get(第一个):后面那个写残的 pin 不报错(且 pin 固定被静默取消),
+	// 后面那个合法 pin 也不参与匹配(真 pin 在第二个时 fail-closed 拨不通)。
+	for _, v := range q["serverPins"] {
+		pins, perr := ParsePins(v)
+		if perr != nil {
+			return nil, perr
+		}
+		cfg.ServerPins = append(cfg.ServerPins, pins...)
 	}
 	cfg.clientCaPinsRaw = strings.TrimSpace(q.Get("clientCaPins"))
 	cfg.NoSNI = q.Get("nosni") == "1"
